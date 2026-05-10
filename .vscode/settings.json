@@ -1,0 +1,82 @@
+{
+  // ===== LaTeX Workshop：论文根目录与编译配置 =====
+  // 论文源码位于 ls/，main.tex 为入口；不要让插件去根目录找 .tex
+  "latex-workshop.latex.rootFile.doNotPrompt": true,
+  "latex-workshop.latex.rootFile.useSubFile": false,
+  "latex-workshop.latex.rootFile.indicator": "\\begin{document}",
+  "latex-workshop.latex.search.rootFiles.include": [
+    "ls/main.tex"
+  ],
+
+  // 构建产物全部扔到 ls/build/，源目录保持干净
+  "latex-workshop.latex.outDir": "%DIR%/build",
+  "latex-workshop.latex.autoClean.run": "onFailed",
+
+  // 保存即编译 + 自动编译根文件
+  "latex-workshop.latex.autoBuild.run": "onFileChange",
+  "latex-workshop.latex.build.forceRecipeUsage": true,
+
+  // 自定义 tool 与 Makefile 完全对齐：xelatex + shell-escape + synctex + file-line-error
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk-xelatex",
+      "command": "latexmk",
+      "args": [
+        "-xelatex",
+        "-shell-escape",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-halt-on-error",
+        "-outdir=%OUTDIR%",
+        "%DOC%"
+      ],
+      "env": {}
+    },
+    {
+      "name": "latexmk-clean",
+      "command": "latexmk",
+      "args": ["-c", "-outdir=%OUTDIR%"],
+      "env": {}
+    }
+  ],
+
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (xelatex + shell-escape)",
+      "tools": ["latexmk-xelatex"]
+    }
+  ],
+  "latex-workshop.latex.recipe.default": "latexmk (xelatex + shell-escape)",
+
+  // 让 latexmk 认识 minted 生成的 _minted-main 目录，别当成问题
+  "latex-workshop.latex.watch.files.ignore": [
+    "**/_minted-*/**",
+    "**/*.aux",
+    "**/*.bbl",
+    "**/*.bcf"
+  ],
+
+  // 预览：VS Code 内嵌 PDF，点击正向搜索反向搜索（SyncTeX）
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.synctex.afterBuild.enabled": true,
+
+  // MacTeX 的 texbin 通常已在 /Library/TeX/texbin，brew 装完会自动软链；
+  // 这里显式写进 PATH 保险，避免 VS Code 继承的环境缺少 latexmk
+  "latex-workshop.latex.build.clearLog.everyRecipeStep.enabled": true,
+  "terminal.integrated.env.osx": {
+    "PATH": "/Library/TeX/texbin:/usr/local/bin:/opt/homebrew/bin:${env:PATH}"
+  },
+
+  // ===== 编辑体验 =====
+  "[latex]": {
+    "editor.wordWrap": "on",
+    "editor.unicodeHighlight.ambiguousCharacters": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.tabSize": 2
+  },
+
+  // 保存时自动跑 latexindent 格式化（LaTeX Workshop 自带，若没装 latexindent 可关闭）
+  "latex-workshop.latex.autoBuild.interval": 1000,
+  "editor.formatOnSave": false
+}

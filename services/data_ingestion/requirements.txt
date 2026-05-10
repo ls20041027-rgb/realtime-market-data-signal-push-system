@@ -1,0 +1,4 @@
+confluent-kafka
+pywin32
+pytz
+pyyaml

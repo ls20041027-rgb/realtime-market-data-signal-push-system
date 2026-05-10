@@ -1,0 +1,112 @@
+
+kafka:
+  bootstrap_servers: "127.0.0.1:9092"
+  group_id: "stream-engine-consumer"
+  client_id: "stream-engine"
+
+  topic_report: "market.report"
+  topic_fenbi: "market.fenbi"
+  topic_mkttbl: "market.mkttbl"
+  topic_finance: "market.finance"
+  topic_filedata_history: "market.filedata.history"
+  topic_filedata_minute: "market.filedata.minute"
+  topic_filedata_5minute: "market.filedata.5minute"
+  topic_filedata_power: "market.filedata.power"
+
+  topic_market_data_normalized: "market_data_normalized"
+  topic_trading_signals: "trading_signals"
+  topic_system_events: "system_events"
+
+  auto_offset_reset: "latest"
+  enable_auto_commit: true
+  poll_timeout_seconds: 1.0
+  reconnect_wait_seconds: 3.0
+  reconnect_max_wait_seconds: 60.0
+
+  producer_linger_ms: 10
+  producer_acks: "all"
+  producer_flush_timeout_seconds: 5.0
+
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  password: null
+
+  max_connections: 50
+  socket_timeout_seconds: 2.0
+  socket_connect_timeout_seconds: 2.0
+  health_check_interval_seconds: 30
+
+  default_ttl_seconds: 86400
+  hist_ttl_seconds: 604800
+  signal_dedup_ttl_seconds: 300
+
+redis_keys:
+  quote_prefix: "quote:"
+  indicator_prefix: "indicator:"
+  fenbi_prefix: "fenbi:"
+  capital_prefix: "capital:"
+  tech_prefix: "tech:"
+  hist_daily_prefix: "hist:daily:"
+  finance_prefix: "finance:"
+  stock_list: "stock_list"
+  signal_dedup_prefix: "signal:dedup:"
+  tempo_ts_prefix: "tempo:ts:"
+
+postgres:
+  host: "127.0.0.1"
+  port: 5432
+  user: "postgres"
+  password: ""
+  database: "tornado_seeker"
+
+  pool_size: 10
+  max_overflow: 20
+  pool_recycle_seconds: 1800
+  pool_pre_ping: true
+  echo_sql: false
+
+  batch_insert_size: 1000
+
+thresholds:
+  big_order_threshold: 500000
+  volume_ratio_threshold: 2.0
+  limit_up_warn_ratio: 9.5
+  limit_down_warn_ratio: -9.5
+  boll_k: 2.0
+
+  big_order_burst_count: 5
+  tempo_window_seconds: 60
+
+  ma_periods: [5, 10, 20, 60]
+  rsi_period: 14
+  kdj_n: 9
+  kdj_m1: 3
+  kdj_m2: 3
+  boll_period: 20
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+
+  hist_daily_lookback: 60
+  fenbi_max_len: 500
+
+runtime:
+  service_name: "stream_engine"
+  log_level: "INFO"
+  log_file: "logs/stream_engine.log"
+  log_max_bytes: 104857600
+  log_backup_count: 10
+  timezone: "Asia/Shanghai"
+
+  morning_session_start: "09:30:00"
+  morning_session_end: "11:30:00"
+  afternoon_session_start: "13:00:00"
+  afternoon_session_end: "15:00:00"
+
+  metrics_interval_seconds: 10.0
+  metrics_enabled: true
+
+pathway:
+  autocommit_duration_ms: 200

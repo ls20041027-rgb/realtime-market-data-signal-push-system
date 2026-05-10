@@ -1,0 +1,28 @@
+
+kafka:
+  bootstrap_servers: "192.168.124.6:9092"
+  topic_report: "market.report"
+  topic_fenbi: "market.fenbi"
+  topic_mkttbl: "market.mkttbl"
+  topic_finance: "market.finance"
+  topic_filedata_history: "market.filedata.history"
+  topic_filedata_minute: "market.filedata.minute"
+  topic_filedata_5minute: "market.filedata.5minute"
+  topic_filedata_power: "market.filedata.power"
+  topic_system_events: "system_events"
+  client_id: "data-ingestion-service"
+  batch_size: 1048576
+  linger_ms: 50
+  buffer_memory: 67108864
+  compression_type: "lz4"
+  queue_buffering_max_messages: 500000
+
+service:
+  source_name: "data_ingestion"
+  queue_maxsize: 500000
+  batch_drain_size: 500
+  timezone: "Asia/Shanghai"
+
+runtime:
+  log_level: "INFO"
+  fenbi_header_size: 30

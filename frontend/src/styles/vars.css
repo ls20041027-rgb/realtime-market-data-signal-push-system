@@ -1,0 +1,16 @@
+/* 设计令牌：对齐 FRONTEND_ARCHITECTURE.md §7 */
+:root {
+  --bg: #0b0e13;
+  --panel: #141922;
+  --divider: #1f2632;
+  --text: #e6e8eb;
+  --text-dim: #8b93a1;
+  --up: #ff3b30;
+  --down: #00c853;
+  --neutral: #8b93a1;
+  --warn: #ffb300;
+  --info: #5b8cff;
+  --critical: #ff2d55;
+  --font-mono: 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-sans: Inter, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}

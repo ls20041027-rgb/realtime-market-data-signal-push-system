@@ -1,0 +1,34 @@
+@import './vars.css';
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 等宽数字类：价格 / 量能统一使用 */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.color-up { color: var(--up); }
+.color-down { color: var(--down); }
+.color-neutral { color: var(--neutral); }
