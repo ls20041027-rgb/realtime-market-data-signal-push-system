@@ -1,0 +1,141 @@
+================================================================================
+tornado-seeker 服务依赖清单（不含 data_ingestion）
+生成时间: 2026-05-19
+================================================================================
+
+================================================================================
+1. stream_engine (Python / Pathway 实时处理层)
+文件路径: /services/stream_engine/requirements.txt
+================================================================================
+
+[运行时依赖]
+confluent-kafka>=2.3,<3.0
+redis>=5.0,<6.0
+sqlalchemy>=2.0,<3.0
+psycopg2-binary>=2.9,<3.0
+pydantic>=2.5,<3.0
+pydantic-settings>=2.1,<3.0
+python-dateutil>=2.8,<3.0
+structlog>=24.1,<25.0
+tenacity>=8.2,<10.0
+apscheduler>=3.10,<4.0
+pathway>=0.11,<1.0
+
+[开发/测试依赖]
+pytest>=8.0,<9.0
+pytest-mock>=3.10,<4.0
+fakeredis>=2.20,<3.0
+
+================================================================================
+2. push_gateway (Go / WebSocket 信号推送层)
+文件路径: /services/push_gateway/go.mod
+Go 版本: 1.25.5
+================================================================================
+
+[直接依赖]
+github.com/gin-gonic/gin v1.12.0
+github.com/gorilla/websocket v1.5.3
+github.com/jackc/pgx/v5 v5.9.2
+github.com/jmoiron/sqlx v1.4.0
+github.com/redis/go-redis/v9 v9.18.0
+github.com/segmentio/kafka-go v0.4.51
+github.com/shopspring/decimal v1.4.0
+gopkg.in/yaml.v3 v3.0.1
+
+[间接依赖]
+github.com/bytedance/gopkg v0.1.3
+github.com/bytedance/sonic v1.15.0
+github.com/bytedance/sonic/loader v0.5.0
+github.com/cespare/xxhash/v2 v2.3.0
+github.com/cloudwego/base64x v0.1.6
+github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
+github.com/gabriel-vasile/mimetype v1.4.12
+github.com/gin-contrib/sse v1.1.0
+github.com/go-playground/locales v0.14.1
+github.com/go-playground/universal-translator v0.18.1
+github.com/go-playground/validator/v10 v10.30.1
+github.com/goccy/go-json v0.10.5
+github.com/goccy/go-yaml v1.19.2
+github.com/jackc/pgpassfile v1.0.0
+github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761
+github.com/jackc/puddle/v2 v2.2.2
+github.com/json-iterator/go v1.1.12
+github.com/klauspost/compress v1.17.6
+github.com/klauspost/cpuid/v2 v2.3.0
+github.com/leodido/go-urn v1.4.0
+github.com/mattn/go-isatty v0.0.20
+github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
+github.com/modern-go/reflect2 v1.0.2
+github.com/pelletier/go-toml/v2 v2.2.4
+github.com/pierrec/lz4/v4 v4.1.15
+github.com/quic-go/qpack v0.6.0
+github.com/quic-go/quic-go v0.59.0
+github.com/twitchyliquid64/golang-asm v0.15.1
+github.com/ugorji/go/codec v1.3.1
+go.mongodb.org/mongo-driver/v2 v2.5.0
+go.uber.org/atomic v1.11.0
+golang.org/x/arch v0.22.0
+golang.org/x/crypto v0.48.0
+golang.org/x/net v0.51.0
+golang.org/x/sync v0.19.0
+golang.org/x/sys v0.41.0
+golang.org/x/text v0.34.0
+google.golang.org/protobuf v1.36.10
+
+================================================================================
+3. frontend (Vue 3 / Vite 前端)
+文件路径: /frontend/package.json
+包管理器: pnpm@9.12.0
+================================================================================
+
+[运行时依赖]
+@tanstack/vue-virtual ^3.13.24
+ant-design-vue ^4.2.3
+axios ^1.7.7
+decimal.js ^10.4.3
+echarts ^5.5.1
+pinia ^2.2.4
+vue ^3.5.12
+vue-router ^4.4.5
+
+[开发依赖]
+@types/node ^22.7.5
+@vitejs/plugin-vue ^5.1.4
+@vue/tsconfig ^0.5.1
+eslint ^9.12.0
+eslint-plugin-vue ^9.28.0
+jsdom ^29.0.2
+typescript ~5.6.2
+typescript-eslint ^8.8.1
+unocss ^0.63.4
+vite ^5.4.8
+vitest ^2.1.2
+vue-tsc ^2.1.6
+
+================================================================================
+4. 基础设施 (Docker 容器)
+================================================================================
+
+[Zookeeper]
+镜像: confluentinc/cp-zookeeper:7.4.0
+端口: 2181
+
+[Kafka]
+镜像: confluentinc/cp-kafka:7.4.0
+端口: 9092
+用途: 消息总线，各层间数据流转
+
+[Redis]
+镜像: redis:7.2-alpine
+端口: 6379
+用途: 热缓存 + 发布订阅
+
+[PostgreSQL]
+镜像: postgres:16-alpine
+端口: 5432
+数据库: tornado_seeker
+用途: 持久化存储
+
+================================================================================
+依赖清单结束
+================================================================================
