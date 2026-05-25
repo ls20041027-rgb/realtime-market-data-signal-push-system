@@ -1,6 +1,5 @@
 package api
 
-
 import (
 	"context"
 	"net/http"
@@ -24,17 +23,6 @@ var messageTypeLabels = map[string]string{
 	"RCV_FENBIDATA":   "分笔成交(FENBI)",
 	"RCV_MKTTBLDATA":  "行情快照(MKTTBL)",
 	"RCV_FINANCEDATA": "财务数据(FINANCE)",
-	"RCV_FILEDATA":    "文件数据(FILEDATA)",
-}
-
-var fileDataTypeLabels = map[string]string{
-	"FILE_HISTORY_EX": "日K线",
-	"FILE_MINUTE_EX":  "分时线",
-	"FILE_5MINUTE_EX": "5分钟K线",
-	"FILE_POWER_EX":   "除权除息",
-	"FILE_BASE_EX":    "基础信息(忽略)",
-	"FILE_NEWS_EX":    "新闻(忽略)",
-	"FILE_HTML_EX":    "HTML(忽略)",
 }
 
 func handleIngestStats(d Deps) gin.HandlerFunc {
@@ -52,7 +40,6 @@ func handleIngestStats(d Deps) gin.HandlerFunc {
 		startedAtMs := parseInt64(fields["__started_at_ms"])
 
 		messageTypes := make([]gin.H, 0, 8)
-		fileDataTypes := make([]gin.H, 0, 8)
 		totalCount := int64(0)
 
 		for field, valueStr := range fields {
@@ -60,8 +47,7 @@ func handleIngestStats(d Deps) gin.HandlerFunc {
 				continue
 			}
 			count := parseInt64(valueStr)
-			switch {
-			case strings.HasPrefix(field, "mt:"):
+			if strings.HasPrefix(field, "mt:") {
 				key := strings.TrimPrefix(field, "mt:")
 				messageTypes = append(messageTypes, gin.H{
 					"message_type": key,
@@ -69,13 +55,6 @@ func handleIngestStats(d Deps) gin.HandlerFunc {
 					"count":        count,
 				})
 				totalCount += count
-			case strings.HasPrefix(field, "ft:"):
-				key := strings.TrimPrefix(field, "ft:")
-				fileDataTypes = append(fileDataTypes, gin.H{
-					"file_data_type": key,
-					"label":          labelOr(fileDataTypeLabels, key),
-					"count":          count,
-				})
 			}
 		}
 
@@ -87,22 +66,13 @@ func handleIngestStats(d Deps) gin.HandlerFunc {
 			}
 			return messageTypes[i]["message_type"].(string) < messageTypes[j]["message_type"].(string)
 		})
-		sort.Slice(fileDataTypes, func(i, j int) bool {
-			ci, _ := fileDataTypes[i]["count"].(int64)
-			cj, _ := fileDataTypes[j]["count"].(int64)
-			if ci != cj {
-				return ci > cj
-			}
-			return fileDataTypes[i]["file_data_type"].(string) < fileDataTypes[j]["file_data_type"].(string)
-		})
 
 		out := gin.H{
-			"message_types":   messageTypes,
-			"file_data_types": fileDataTypes,
-			"total_count":     totalCount,
-			"updated_at_ms":   updatedAtMs,
-			"started_at_ms":   startedAtMs,
-			"now_ms":          time.Now().UnixMilli(),
+			"message_types": messageTypes,
+			"total_count":   totalCount,
+			"updated_at_ms": updatedAtMs,
+			"started_at_ms": startedAtMs,
+			"now_ms":        time.Now().UnixMilli(),
 		}
 		if readErr != nil {
 			out["error"] = readErr.Error()

@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"log/slog"
 	"net/http"
 	"sync/atomic"
 
@@ -9,6 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"push_gateway/config"
+	log "push_gateway/internal/log"
 )
 
 var connCounter atomic.Int64
@@ -17,7 +17,7 @@ func HandleWS(hub *Hub, cfg config.WSConfig) gin.HandlerFunc {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  cfg.ReadBufferSize,
 		WriteBufferSize: cfg.WriteBufferSize,
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin:     func(r *http.Request) bool { return true },
 	}
 
 	return func(gc *gin.Context) {
@@ -30,8 +30,7 @@ func HandleWS(hub *Hub, cfg config.WSConfig) gin.HandlerFunc {
 
 		conn, err := upgrader.Upgrade(gc.Writer, gc.Request, nil)
 		if err != nil {
-			slog.Warn("ws upgrade failed",
-				"component", "ws", "err", err, "remote", gc.Request.RemoteAddr)
+			log.Warnf("ws upgrade failed remote=%s err=%v", gc.Request.RemoteAddr, err)
 			return
 		}
 		connCounter.Add(1)
@@ -40,9 +39,8 @@ func HandleWS(hub *Hub, cfg config.WSConfig) gin.HandlerFunc {
 		client := NewClient(conn, hub, cfg)
 		hub.Register(client)
 
-		slog.Info("ws client connected",
-			"component", "ws", "client_id", client.ID(), "remote", client.addr,
-			"active", connCounter.Load())
+		log.Infof("ws client connected client_id=%s remote=%s active=%d",
+			client.ID(), client.addr, connCounter.Load())
 
 		go client.WritePump(gc.Request.Context())
 		client.ReadPump(gc.Request.Context())

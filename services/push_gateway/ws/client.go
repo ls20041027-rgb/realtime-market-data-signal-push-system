@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
-
 	"push_gateway/config"
+	"push_gateway/internal/latency"
+	log "push_gateway/internal/log"
 	"push_gateway/model"
+
+	"github.com/gorilla/websocket"
 )
 
 var clientIDSeq atomic.Uint64
@@ -107,8 +108,7 @@ func (c *Client) ReadPump(ctx context.Context) {
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !websocket.IsCloseError(err,
 				websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-				slog.Debug("ws read loop exit",
-					"component", "ws", "client_id", c.id, "err", err)
+				log.Debugf("ws read loop exit client_id=%s err=%v", c.id, err)
 			}
 			return
 		}
@@ -180,17 +180,72 @@ func (c *Client) WritePump(ctx context.Context) {
 			}
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := c.conn.WriteJSON(push); err != nil {
-				slog.Debug("ws write failed, closing client",
-					"component", "ws", "client_id", c.id, "err", err)
+				log.Debugf("ws write failed, closing client client_id=%s err=%v", c.id, err)
 				return
+			}
+			// 延迟追踪：WriteJSON 返回后才是真正写完 socket 的时点，这里打 t5。
+			if push.Latency != nil {
+				latency.Submit(buildSample(push.Latency, time.Now().UnixNano()))
 			}
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				slog.Debug("ws ping failed, closing client",
-					"component", "ws", "client_id", c.id, "err", err)
+				log.Debugf("ws ping failed, closing client client_id=%s err=%v", c.id, err)
 				return
 			}
 		}
+	}
+}
+
+// buildSample 拼装一条端到端延迟样本。t5 在调用点已取过（WriteJSON 返回后）。
+func buildSample(tr *model.LatencyTrace, t5 int64) latency.Sample {
+	t0 := tr.T0IngestInNs
+	t1 := tr.T1IngestOutNs
+	t2 := tr.T2EngineInNs
+	t3 := tr.T3EngineOutNs
+	t4 := tr.T4GwInNs
+	log.Infof("build latency sample, t0=%d, t1=%d, t2=%d, t3=%d, t4=%d, t5=%d", t0, t1, t2, t3, t4, t5)
+
+	var ingestProc, kafka1, engine, kafka2, gateway int64
+	if t1 > 0 && t0 > 0 {
+		ingestProc = t1 - t0
+	}
+	if t2 > 0 && t1 > 0 {
+		kafka1 = t2 - t1
+	} else if t3 > 0 && t1 > 0 {
+		// 降级：没有 t2 时把 kafka1 + engine 合并计入 kafka1
+		kafka1 = t3 - t1
+	}
+	if t3 > 0 && t2 > 0 {
+		engine = t3 - t2
+	}
+	if t4 > 0 && t3 > 0 {
+		kafka2 = t4 - t3
+	}
+	if t5 > 0 && t4 > 0 {
+		gateway = t5 - t4
+	}
+
+	var e2e int64
+	if t0 > 0 && t5 > 0 {
+		e2e = t5 - t0
+	}
+
+	return latency.Sample{
+		Symbol:        tr.Symbol,
+		SignalType:    tr.SignalType,
+		T0IngestInNs:  t0,
+		T1IngestOutNs: t1,
+		T2EngineInNs:  t2,
+		T3EngineOutNs: t3,
+		T4GwInNs:      t4,
+		T5GwOutNs:     t5,
+		IngestProcNs:  ingestProc,
+		Kafka1Ns:      kafka1,
+		EngineNs:      engine,
+		Kafka2Ns:      kafka2,
+		GatewayNs:     gateway,
+		EndToEndNs:    e2e,
+		TsMs:          time.Now().UnixMilli(),
 	}
 }

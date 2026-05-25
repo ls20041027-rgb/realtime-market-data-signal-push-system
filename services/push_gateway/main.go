@@ -3,17 +3,17 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 
 	"push_gateway/api"
 	"push_gateway/config"
+	"push_gateway/internal/latency"
+	log "push_gateway/internal/log"
 	kafkax "push_gateway/kafka"
 	"push_gateway/storage"
 	"push_gateway/ws"
@@ -28,34 +28,45 @@ func main() {
 func run() int {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config failed", "err", err)
+		log.Errorf("load config failed: %v", err)
 		return 1
 	}
 
-	logger := newLogger(cfg.Runtime.LogLevel)
-	slog.SetDefault(logger)
+	if err := log.Init(cfg.Runtime.LogLevel, "logs", "push_gateway.log"); err != nil {
+		log.Errorf("init logger failed: %v", err)
+		return 1
+	}
+	defer log.Close()
 
-	logger.Info("push_gateway starting",
-		"pid", os.Getpid(),
-		"listen_addr", cfg.HTTP.ListenAddr,
-		"kafka_group", cfg.Kafka.GroupID,
-		"redis_host", cfg.Redis.Host,
-		"postgres_host", cfg.Postgres.Host,
-	)
+	log.Infof("push_gateway starting pid=%d listen_addr=%s kafka_group=%s redis_host=%s postgres_host=%s",
+		os.Getpid(), cfg.HTTP.ListenAddr, cfg.Kafka.GroupID, cfg.Redis.Host, cfg.Postgres.Host)
 
 	redisStore, err := storage.NewRedis(cfg.Redis)
 	if err != nil {
-		logger.Error("redis init failed", "err", err)
+		log.Errorf("redis init failed: %v", err)
 		return 2
 	}
-	defer closeOrLog(logger, "redis", redisStore.Close)
+	defer closeOrLog("redis", redisStore.Close)
+
+	latency.Init(redisStore.Client())
+	defer latency.Close()
 
 	mysqlStore, err := storage.NewPostgres(cfg.Postgres)
 	if err != nil {
-		logger.Error("postgres init failed", "err", err)
+		log.Errorf("postgres init failed: %v", err)
 		return 2
 	}
-	defer closeOrLog(logger, "postgres", mysqlStore.Close)
+	defer closeOrLog("postgres", mysqlStore.Close)
+
+	// Auto-migrate: ensure users and watchlist tables exist
+	if err := mysqlStore.EnsureUserTable(context.Background()); err != nil {
+		log.Errorf("ensure users table failed: %v", err)
+		return 2
+	}
+	if err := mysqlStore.EnsureWatchlistTable(context.Background()); err != nil {
+		log.Errorf("ensure watchlist table failed: %v", err)
+		return 2
+	}
 
 	hub := ws.NewHub(cfg.WS)
 	hubCtx, hubCancel := context.WithCancel(context.Background())
@@ -76,18 +87,19 @@ func run() int {
 	}()
 
 	deps := api.Deps{
-		Cfg:      cfg,
-		Redis:    redisStore,
-		MySQL:    mysqlStore,
-		Hub:      hub,
-		Consumer: consumer,
-		StartAt:  time.Now(),
+		Cfg:     cfg,
+		Redis:   redisStore,
+		MySQL:   mysqlStore,
+		Hub:     hub,
+		StartAt: time.Now(),
 	}
 	router := api.NewRouter(deps)
 
 	metricsCtx, metricsCancel := context.WithCancel(context.Background())
 	defer metricsCancel()
 	api.StartMetricsLoop(metricsCtx, deps)
+	api.StartResourceMonitor(deps)
+	defer api.StopResourceMonitor()
 
 	router.GET("/ws", gin.HandlerFunc(ws.HandleWS(hub, cfg.WS)))
 	router.GET("/ws/market", gin.HandlerFunc(ws.HandleWS(hub, cfg.WS)))
@@ -102,7 +114,7 @@ func run() int {
 
 	serverErrCh := make(chan error, 1)
 	go func() {
-		logger.Info("http server listening", "addr", server.Addr)
+		log.Infof("http server listening addr=%s", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrCh <- err
 			return
@@ -115,11 +127,11 @@ func run() int {
 
 	select {
 	case <-ctx.Done():
-		logger.Info("shutdown signal received, graceful stopping",
-			"shutdown_timeout", cfg.HTTP.ShutdownTimeout.String())
+		log.Infof("shutdown signal received, graceful stopping shutdown_timeout=%s",
+			cfg.HTTP.ShutdownTimeout.String())
 	case err := <-serverErrCh:
 		if err != nil {
-			logger.Error("http server exited abnormally", "err", err)
+			log.Errorf("http server exited abnormally: %v", err)
 			return 3
 		}
 	}
@@ -128,47 +140,35 @@ func run() int {
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		logger.Error("http server shutdown failed", "err", err)
+		log.Errorf("http server shutdown failed: %v", err)
 	} else {
-		logger.Info("http server stopped")
+		log.Infof("http server stopped")
 	}
 
 	hub.Close()
 	hubCancel()
-	waitWithTimeout(hubDone, cfg.HTTP.ShutdownTimeout, logger, "hub")
+	waitWithTimeout(hubDone, cfg.HTTP.ShutdownTimeout, "hub")
 
 	consumerCancel()
 	if err := consumer.Close(); err != nil {
-		logger.Error("consumer close failed", "err", err)
+		log.Errorf("consumer close failed: %v", err)
 	}
-	waitWithTimeout(consumerDone, cfg.HTTP.ShutdownTimeout, logger, "consumer")
+	waitWithTimeout(consumerDone, cfg.HTTP.ShutdownTimeout, "consumer")
 
-	logger.Info("push_gateway stopped", "goroutines", runtime.NumGoroutine())
+	log.Infof("push_gateway stopped goroutines=%d", runtime.NumGoroutine())
 	return 0
 }
 
-func newLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	if err := lvl.UnmarshalText([]byte(strings.ToUpper(strings.TrimSpace(level)))); err != nil {
-		lvl = slog.LevelInfo
-	}
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level:     lvl,
-		AddSource: false,
-	})
-	return slog.New(handler).With("service", "push_gateway")
-}
-
-func closeOrLog(logger *slog.Logger, name string, closeFn func() error) {
+func closeOrLog(name string, closeFn func() error) {
 	start := time.Now()
 	if err := closeFn(); err != nil {
-		logger.Error("component close failed", "component", name, "err", err)
+		log.Errorf("component close failed component=%s err=%v", name, err)
 		return
 	}
-	logger.Info("component closed", "component", name, "cost_ms", time.Since(start).Milliseconds())
+	log.Infof("component closed component=%s cost_ms=%d", name, time.Since(start).Milliseconds())
 }
 
-func waitWithTimeout(done <-chan struct{}, timeout time.Duration, logger *slog.Logger, name string) {
+func waitWithTimeout(done <-chan struct{}, timeout time.Duration, name string) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -176,8 +176,8 @@ func waitWithTimeout(done <-chan struct{}, timeout time.Duration, logger *slog.L
 	defer t.Stop()
 	select {
 	case <-done:
-		logger.Info("component stopped", "component", name)
+		log.Infof("component stopped component=%s", name)
 	case <-t.C:
-		logger.Warn("component stop timeout, continuing", "component", name, "timeout", timeout.String())
+		log.Warnf("component stop timeout, continuing component=%s timeout=%s", name, timeout.String())
 	}
 }

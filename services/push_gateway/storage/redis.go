@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -44,11 +45,15 @@ func (r *RedisStore) Ping(ctx context.Context) error {
 
 func (r *RedisStore) Close() error { return r.cli.Close() }
 
+// Client 返回底层 redis 客户端，仅供需要原生 client 的模块（如 latency reporter）使用。
+func (r *RedisStore) Client() *redis.Client { return r.cli }
 
+// GetQuote 读取 hash 形式的行情快照（HGETALL）。
 func (r *RedisStore) GetQuote(ctx context.Context, symbol string) (map[string]string, error) {
 	return r.hgetAll(ctx, r.cfg.Quote(symbol))
 }
 
+// GetQuotes 用 pipeline 批量 HGETALL，缺失的 symbol 不出现在结果中。
 func (r *RedisStore) GetQuotes(ctx context.Context, symbols []string) (map[string]map[string]string, error) {
 	if len(symbols) == 0 {
 		return map[string]map[string]string{}, nil
@@ -73,6 +78,24 @@ func (r *RedisStore) GetQuotes(ctx context.Context, symbols []string) (map[strin
 		out[sym] = m
 	}
 	return out, nil
+}
+
+// SetQuoteHash 写 hash 形式的行情快照缓存（DEL+HSET+EXPIRE，原子下发）。
+func (r *RedisStore) SetQuoteHash(ctx context.Context, symbol string, fields map[string]string, ttl time.Duration) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	key := r.cfg.Quote(symbol)
+	pipe := r.cli.Pipeline()
+	pipe.Del(ctx, key)
+	pipe.HSet(ctx, key, fields)
+	if ttl > 0 {
+		pipe.Expire(ctx, key, ttl)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("redis set quote hash %s failed: %w", symbol, err)
+	}
+	return nil
 }
 
 func (r *RedisStore) GetIndicator(ctx context.Context, symbol string) (map[string]string, error) {

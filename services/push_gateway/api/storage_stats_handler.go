@@ -1,6 +1,5 @@
 package api
 
-
 import (
 	"context"
 	"net/http"
@@ -24,11 +23,11 @@ var mysqlStatTables = []struct {
 	{"证券基础信息", "stock_info"},
 	{"日K线", "stock_daily_kline"},
 	{"5分钟K线", "stock_5min_kline"},
-	{"分时线", "stock_minute_kline"},
+	{"1分钟K线(实时)", "stock_1min_kline_rt"},
 	{"除权除息", "stock_power"},
 	{"财务数据", "stock_finance"},
 	{"日度资金流", "daily_capital_flow"},
-	{"信号历史", "signal_history"},
+	{"实时信号", "stock_signal"},
 }
 
 func handleStorageStats(d Deps) gin.HandlerFunc {

@@ -16,14 +16,14 @@ const (
 
 func handleStockList(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		m, err := d.Redis.GetStockList(c.Request.Context())
+		rows, err := d.MySQL.QueryStockList(c.Request.Context())
 		if err != nil {
 			writeError(c, err)
 			return
 		}
-		items := make([]gin.H, 0, len(m))
-		for symbol, name := range m {
-			items = append(items, gin.H{"symbol": symbol, "name": name})
+		items := make([]gin.H, 0, len(rows))
+		for _, r := range rows {
+			items = append(items, gin.H{"symbol": r.Symbol, "name": r.Name})
 		}
 		c.JSON(http.StatusOK, model.Ok(gin.H{
 			"items": items,
@@ -65,10 +65,27 @@ func handleFinance(d Deps) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
+		items := make([]gin.H, 0, len(rows))
+		for _, r := range rows {
+			eps, _ := r.EPS.Float64()
+			bps, _ := r.BPS.Float64()
+			netProfit, _ := r.NetProfit.Float64()
+			totalShares, _ := r.TotalShares.Float64()
+			floatShares, _ := r.FloatShares.Float64()
+			items = append(items, gin.H{
+				"symbol":       r.Symbol,
+				"report_date":  r.ReportDate,
+				"total_shares": totalShares / 10000,
+				"float_shares": floatShares / 10000,
+				"eps":          eps / 10000,
+				"bps":          bps / 10000,
+				"net_profit":   netProfit / 10000,
+			})
+		}
 		c.JSON(http.StatusOK, model.Ok(gin.H{
 			"symbol": symbol,
-			"items":  rows,
-			"total":  len(rows),
+			"items":  items,
+			"total":  len(items),
 		}))
 	}
 }

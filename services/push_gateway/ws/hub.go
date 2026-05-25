@@ -2,10 +2,11 @@ package ws
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	log "push_gateway/internal/log"
 
 	"push_gateway/config"
 	"push_gateway/model"
@@ -71,7 +72,7 @@ func (h *Hub) Run(ctx context.Context) {
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
-	slog.Info("hub started", "component", "ws", "flush_interval_ms", flushInterval.Milliseconds())
+	log.Infof("hub started flush_interval_ms=%d", flushInterval.Milliseconds())
 
 	for {
 		select {
@@ -99,7 +100,6 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
-
 func (h *Hub) Register(c *Client) { h.register <- c }
 
 func (h *Hub) Unregister(c *Client) {
@@ -124,8 +124,7 @@ func (h *Hub) Broadcast(channel string, push model.ServerPush) {
 	case h.broadcast <- BroadcastMsg{Channel: channel, Push: push}:
 	default:
 		h.droppedSlow.Add(1)
-		slog.Warn("hub broadcast queue full, drop",
-			"component", "ws", "channel", channel)
+		log.Warnf("hub broadcast queue full, drop channel=%s", channel)
 	}
 }
 
@@ -151,8 +150,6 @@ func IsValidChannel(ch string) bool {
 	switch {
 	case ch == model.WSChannelSignalAll:
 		return true
-	case ch == model.WSChannelSystemEvents:
-		return true
 	case strings.HasPrefix(ch, model.WSChannelQuotePrefix) && len(ch) > len(model.WSChannelQuotePrefix):
 		return true
 	case strings.HasPrefix(ch, model.WSChannelSignalPrefix) && len(ch) > len(model.WSChannelSignalPrefix):
@@ -162,11 +159,10 @@ func IsValidChannel(ch string) bool {
 	}
 }
 
-
 func (h *Hub) doRegister(c *Client) {
 	h.clients[c] = struct{}{}
-	slog.Info("ws client registered",
-		"component", "ws", "client_id", c.ID(), "total_clients", len(h.clients))
+	log.Infof("ws client registered client_id=%s total_clients=%d",
+		c.ID(), len(h.clients))
 }
 
 func (h *Hub) doUnregister(c *Client) {
@@ -184,8 +180,8 @@ func (h *Hub) doUnregister(c *Client) {
 	}
 	delete(h.pending, c)
 	c.closeSend()
-	slog.Info("ws client unregistered",
-		"component", "ws", "client_id", c.ID(), "total_clients", len(h.clients))
+	log.Infof("ws client unregistered client_id=%s total_clients=%d",
+		c.ID(), len(h.clients))
 }
 
 func (h *Hub) doSubscribe(req subscribeReq) {
@@ -270,8 +266,8 @@ func (h *Hub) tryDeliver(c *Client, p model.ServerPush) {
 		return
 	}
 	h.droppedSlow.Add(1)
-	slog.Warn("slow consumer, drop frame",
-		"component", "ws", "client_id", c.ID(), "channel", p.Channel)
+	log.Warnf("slow consumer, drop frame client_id=%s channel=%s",
+		c.ID(), p.Channel)
 }
 
 func (h *Hub) snapshotStats() HubStats {
@@ -298,8 +294,7 @@ func (h *Hub) snapshotStats() HubStats {
 }
 
 func (h *Hub) shutdown() {
-	slog.Info("hub shutting down",
-		"component", "ws", "remaining_clients", len(h.clients))
+	log.Infof("hub shutting down remaining_clients=%d", len(h.clients))
 	for c := range h.clients {
 		c.closeSend()
 	}

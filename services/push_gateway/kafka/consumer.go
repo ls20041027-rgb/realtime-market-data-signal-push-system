@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/segmentio/kafka-go"
 
 	"push_gateway/config"
+	log "push_gateway/internal/log"
 	"push_gateway/model"
 )
 
@@ -37,10 +37,20 @@ func (c *Consumer) Stats() []TopicStats {
 	out := make([]TopicStats, 0, len(c.readers))
 	for topic, r := range c.readers {
 		s := r.Stats()
+		// 直接使用Partition字段，它已经是string类型
+		partitionStr := s.Partition
+		// 如果分区显示为-1，可能是kafka-go的默认值，我们改为显示0
+		if partitionStr == "-1" {
+			partitionStr = "0"
+		}
+		lag := s.Lag
+		if lag < 0 {
+			lag = 0 // 当Lag为-1时，显示为0
+		}
 		out = append(out, TopicStats{
 			Topic:     topic,
-			Partition: s.Partition,
-			Lag:       s.Lag,
+			Partition: partitionStr,
+			Lag:       lag,
 			Offset:    s.Offset,
 			Messages:  s.Messages,
 			Errors:    s.Errors,
@@ -67,21 +77,14 @@ func NewConsumer(cfg config.KafkaConfig, hub Broadcaster) *Consumer {
 		readers: map[string]*kafka.Reader{
 			cfg.TopicMarketDataNormalized: newReader(cfg.TopicMarketDataNormalized),
 			cfg.TopicTradingSignals:       newReader(cfg.TopicTradingSignals),
-			cfg.TopicSystemEvents:         newReader(cfg.TopicSystemEvents),
 		},
 	}
 }
 
 func (c *Consumer) Run(ctx context.Context) {
-	slog.Info("kafka consumer starting",
-		"component", "kafka", "group_id", c.cfg.GroupID,
-		"brokers", c.cfg.BootstrapServers,
-		"topics", []string{
-			c.cfg.TopicMarketDataNormalized,
-			c.cfg.TopicTradingSignals,
-			c.cfg.TopicSystemEvents,
-		},
-	)
+	log.Infof("kafka consumer starting group_id=%s brokers=%v topics=[%s,%s]",
+		c.cfg.GroupID, c.cfg.BootstrapServers,
+		c.cfg.TopicMarketDataNormalized, c.cfg.TopicTradingSignals)
 	done := make(chan struct{}, len(c.readers))
 	for topic, reader := range c.readers {
 		go func(topic string, r *kafka.Reader) {
@@ -92,7 +95,7 @@ func (c *Consumer) Run(ctx context.Context) {
 	for i := 0; i < len(c.readers); i++ {
 		<-done
 	}
-	slog.Info("kafka consumer stopped", "component", "kafka")
+	log.Infof("kafka consumer stopped")
 }
 
 func (c *Consumer) Close() error {
@@ -100,8 +103,7 @@ func (c *Consumer) Close() error {
 	for topic, r := range c.readers {
 		if err := r.Close(); err != nil && firstErr == nil {
 			firstErr = err
-			slog.Error("kafka reader close failed",
-				"component", "kafka", "topic", topic, "err", err)
+			log.Errorf("kafka reader close failed topic=%s err=%v", topic, err)
 		}
 	}
 	return firstErr
@@ -126,9 +128,8 @@ func (c *Consumer) consumeLoop(ctx context.Context, topic string, r *kafka.Reade
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				return
 			}
-			slog.Error("kafka read failed, backing off",
-				"component", "kafka", "topic", topic,
-				"backoff_ms", backoff.Milliseconds(), "err", err)
+			log.Errorf("kafka read failed, backing off topic=%s backoff_ms=%d err=%v",
+				topic, backoff.Milliseconds(), err)
 			if !sleepOrDone(ctx, backoff) {
 				return
 			}
@@ -142,69 +143,57 @@ func (c *Consumer) consumeLoop(ctx context.Context, topic string, r *kafka.Reade
 		if backoff <= 0 {
 			backoff = 2 * time.Second
 		}
-		c.dispatch(topic, msg)
+		switch topic {
+		case c.cfg.TopicMarketDataNormalized:
+			c.handleMarketSnapshot(msg)
+		case c.cfg.TopicTradingSignals:
+			c.handleTradingSignal(msg)
+		}
 	}
 }
 
-func (c *Consumer) dispatch(topic string, msg kafka.Message) {
-	var env model.Envelope
-	if err := json.Unmarshal(msg.Value, &env); err != nil {
-		slog.Warn("kafka envelope decode failed, skip",
-			"component", "kafka", "topic", topic,
-			"offset", msg.Offset, "err", err)
+func (c *Consumer) handleMarketSnapshot(msg kafka.Message) {
+	var payload model.MarketSnapshotPayload
+	if err := json.Unmarshal(msg.Value, &payload); err != nil {
+		log.Warnf("decode market snapshot failed offset=%d err=%v", msg.Offset, err)
 		return
+	}
+	c.hub.Broadcast(model.WSChannelQuotePrefix+payload.Symbol, model.ServerPush{
+		Channel: model.WSChannelQuotePrefix + payload.Symbol,
+		Type:    model.WSTypeMarketSnapshot,
+		Data:    &payload,
+		Ts:      time.Now().UnixMilli(),
+	})
+}
+
+func (c *Consumer) handleTradingSignal(msg kafka.Message) {
+	var payload model.TradingSignalPayload
+	if err := json.Unmarshal(msg.Value, &payload); err != nil {
+		log.Warnf("decode trading signal failed offset=%d err=%v", msg.Offset, err)
+		return
+	}
+	t4 := time.Now().UnixNano()
+
+	var trace *model.LatencyTrace
+	if payload.T0IngestInNs > 0 {
+		trace = &model.LatencyTrace{
+			Symbol:        payload.Symbol,
+			SignalType:    payload.SignalType,
+			T0IngestInNs:  payload.T0IngestInNs,
+			T1IngestOutNs: payload.T1IngestOutNs,
+			T2EngineInNs:  payload.T2EngineInNs,
+			T3EngineOutNs: payload.T3EngineOutNs,
+			T4GwInNs:      t4,
+		}
 	}
 
 	ts := time.Now().UnixMilli()
-
-	switch env.MessageType {
-	case "MARKET_SNAPSHOT_NORMALIZED":
-		payload, err := model.ParseMarketSnapshot(env.Payload)
-		if err != nil {
-			slog.Warn("decode market snapshot failed",
-				"component", "kafka", "symbol", env.Symbol, "err", err)
-			return
-		}
-		c.hub.Broadcast(model.WSChannelQuotePrefix+env.Symbol, model.ServerPush{
-			Channel: model.WSChannelQuotePrefix + env.Symbol,
-			Type:    model.WSTypeMarketSnapshot,
-			Data:    payload,
-			Ts:      ts,
-		})
-
-	case "TRADING_SIGNAL":
-		payload, err := model.ParseTradingSignal(env.Payload)
-		if err != nil {
-			slog.Warn("decode trading signal failed",
-				"component", "kafka", "symbol", env.Symbol, "err", err)
-			return
-		}
-		perSymbol := model.WSChannelSignalPrefix + env.Symbol
-		push := model.ServerPush{Type: model.WSTypeTradingSignal, Data: payload, Ts: ts}
-		push.Channel = perSymbol
-		c.hub.Broadcast(perSymbol, push)
-		push.Channel = model.WSChannelSignalAll
-		c.hub.Broadcast(model.WSChannelSignalAll, push)
-
-	case "SERVICE_INFO", "SERVICE_WARNING", "SERVICE_ERROR", "SERVICE_CRITICAL":
-		payload, err := model.ParseSystemEvent(env.Payload)
-		if err != nil {
-			slog.Warn("decode system event failed",
-				"component", "kafka", "err", err)
-			return
-		}
-		c.hub.Broadcast(model.WSChannelSystemEvents, model.ServerPush{
-			Channel: model.WSChannelSystemEvents,
-			Type:    model.WSTypeSystemEvent,
-			Data:    payload,
-			Ts:      ts,
-		})
-
-	default:
-		slog.Warn("unknown message_type, skip",
-			"component", "kafka", "topic", topic,
-			"message_type", env.MessageType, "symbol", env.Symbol)
-	}
+	perSymbol := model.WSChannelSignalPrefix + payload.Symbol
+	push := model.ServerPush{Type: model.WSTypeTradingSignal, Data: &payload, Ts: ts, Latency: trace}
+	push.Channel = perSymbol
+	c.hub.Broadcast(perSymbol, push)
+	push.Channel = model.WSChannelSignalAll
+	c.hub.Broadcast(model.WSChannelSignalAll, push)
 }
 
 func sleepOrDone(ctx context.Context, d time.Duration) bool {

@@ -38,7 +38,6 @@ type KafkaConfig struct {
 	GroupID                   string        `yaml:"group_id"`
 	TopicMarketDataNormalized string        `yaml:"topic_market_data_normalized"`
 	TopicTradingSignals       string        `yaml:"topic_trading_signals"`
-	TopicSystemEvents         string        `yaml:"topic_system_events"`
 	ReconnectWait             time.Duration `yaml:"reconnect_wait"`
 	ReconnectMaxWait          time.Duration `yaml:"reconnect_max_wait"`
 	MinBytes                  int           `yaml:"min_bytes"`
@@ -51,7 +50,6 @@ func (k *KafkaConfig) UnmarshalYAML(node *yaml.Node) error {
 		GroupID                   string   `yaml:"group_id"`
 		TopicMarketDataNormalized string   `yaml:"topic_market_data_normalized"`
 		TopicTradingSignals       string   `yaml:"topic_trading_signals"`
-		TopicSystemEvents         string   `yaml:"topic_system_events"`
 		ReconnectWait             duration `yaml:"reconnect_wait"`
 		ReconnectMaxWait          duration `yaml:"reconnect_max_wait"`
 		MinBytes                  int      `yaml:"min_bytes"`
@@ -66,7 +64,6 @@ func (k *KafkaConfig) UnmarshalYAML(node *yaml.Node) error {
 		GroupID:                   r.GroupID,
 		TopicMarketDataNormalized: r.TopicMarketDataNormalized,
 		TopicTradingSignals:       r.TopicTradingSignals,
-		TopicSystemEvents:         r.TopicSystemEvents,
 		ReconnectWait:             time.Duration(r.ReconnectWait),
 		ReconnectMaxWait:          time.Duration(r.ReconnectMaxWait),
 		MinBytes:                  r.MinBytes,

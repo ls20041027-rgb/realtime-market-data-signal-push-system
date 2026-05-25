@@ -37,8 +37,8 @@ postgres:
   password: ""
   database: "tornado_seeker"
   sslmode: "disable"
-  max_open_conns: 16
-  max_idle_conns: 4
+  max_open_conns: 64
+  max_idle_conns: 16
   conn_max_lifetime: "30m"
 
 http:
